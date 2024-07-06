@@ -1,0 +1,198 @@
+---
+title: "Netflix Movies"
+author: "Julia Jaroszek"
+date: today
+lang: pl
+output:
+  html_document:
+    code_folding: hide
+language: 
+  title-block-author-single: "Autor"
+  title-block-published: "Utworzono"
+format:   
+  html:    
+    theme:       
+      light: flatly
+      dark: darkly
+    highlight-style: a11y
+    df-print: paged
+    embed-resources: true    
+    toc: true    
+    toc-depth: 4    
+    code-fold: true    
+    code-link: true    
+    code-tools:       
+      source: false
+editor: visual
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(tidytext)
+dane <- read.csv("n_movies.csv")
+```
+
+```{r}
+dane
+```
+
+```{r, results='hide'}
+dane2 <- dane %>% 
+  select(!description) %>% 
+  select(!year) %>% 
+  mutate( genre = str_replace_all(genre, "Sci-Fi", "SciFi"))
+dane2
+```
+
+### Wykres ilości filmów o konkretnym certyfikacie
+
+Wykres pokazuje, że zdecydowana większość filmów na Netflixie jest dedykowana odbiorcom 17+, drugie w kolejności są filmy od lat 14. Widać, że mamy stosunkowo mało filmów dedykowanych młodszym odbiorcom.
+
+```{r, results='hide'}
+dane2 %>% 
+  count(certificate, sort = TRUE) %>% 
+  filter( certificate != "") %>% 
+  ggplot(aes( certificate, n, fill = n )) +
+  geom_bar(stat = "identity", position = "dodge", show.legend = FALSE) +
+  theme(axis.text.x = element_text( angle = 45, hjust = 1))+
+  labs( x = "Certyfikat", y = "ilość filmów w bazie", title = "Wykres ilości filmów o konkretnym certyfikacie") +
+  scale_fill_gradient( low = "#E08CDA", high = "#6738CB")
+```
+
+### Wykres ilości filmów o konkretnym gatunku
+
+Wykres pokazuje, że najwiecej filmów to draamty i komedie oraz filmy akcji.
+
+```{r, results='hide'}
+reg <- "([^A-Za-z\\d#@']|'(?![A-Za-z\\d#@]))"
+dane2 %>% 
+  unnest_tokens(genre, genre, token = "regex", pattern = reg) %>% 
+  count(genre, sort = TRUE) %>% 
+  mutate( genre = reorder( genre, n) )%>% 
+  ggplot( aes(genre, n, fill = n)) +
+  geom_bar(stat = "identity", position = "dodge", show.legend = FALSE) +
+  coord_flip() +
+  labs( x = "Gatunek", y = "ilość filmów w bazie", title = "Wykres ilości filmów o konkretnym gatunku") +
+  scale_fill_gradient( low = "#E08CDA", high = "#6738CB")
+ 
+```
+
+### Wykres średnich ocen dla danego gatunku
+
+Wykres pokazuje, że najlepiej oceniane są filmy historyczne i animacje, a najniżej horrory.
+
+```{r, results='hide'}
+dane2 %>% 
+  unnest_tokens(genre, genre, token = "regex", pattern = reg) %>% 
+  select( genre, rating ) %>% 
+  drop_na( rating ) %>% 
+  group_by(genre) %>% 
+  summarise (average = mean(rating)) %>% 
+  mutate( genre = reorder(genre, average)) %>% 
+  ggplot( aes (genre, average, fill = average)) +
+  geom_col( show.legend = FALSE ) +
+  coord_flip() +
+  labs( x = "Gatunek", y = "średnia ocen", title = "Wykres średnich ocen dla danego gatunku") +
+  scale_fill_gradient( low = "#E08CDA", high = "#6738CB")
+```
+
+```{r, results='hide'}
+filtered_dane <- dane2 %>% 
+  mutate(stars = str_replace_all(stars, "[\\[\\]\\'|]", "")) %>% 
+  separate_rows( stars, sep = ",") %>% 
+  mutate(stars = str_trim(stars)) %>% 
+  filter( stars != " ", !str_detect(stars, "Stars:"), !str_detect(stars, "Star:"), stars !='"', stars != "" )
+```
+
+### Wykres ilości filmów z konkretnym aktorem
+
+Wykres pokazuje, że licząc pojedynczo odcinki seriali tak samo jak filmy, najwięcej filmów mamy z aktorami hinduskimi, mimo czego najczęściej pojawiają się prowadzący wielosezonowy program "Top gear".
+
+```{r}
+filtered_dane %>% 
+  count( stars, sort = TRUE) %>% 
+  head(30) %>% 
+  mutate( stars = reorder(stars, n)) %>% 
+  ggplot( aes( stars, n, fill = n)) +
+  geom_col( show.legend = FALSE ) +
+  coord_flip() +
+  labs( x = "Aktorzy", y = "ilość filmów w bazie", title = "Wykres ilości filmów z konkretnym aktorem") +
+  scale_fill_gradient( low = "#E08CDA", high = "#6738CB")
+```
+
+### Wykres ilości ocen dla danego gatunku
+
+Wykres pokazuje ilość ocen w zalezności od gatunku filmu, pokrywa się w większości z ilością filmów w bazie, ale są drobne różnice. Dużo mniej osób ocenia komedie, mimo, że jest ich sporo.
+
+```{r, results='hide'}
+dane2 %>% 
+  mutate( votes =  as.integer(str_replace_all( votes, ",", ""))) %>% 
+  select(title, votes, genre, rating) %>% 
+  unnest_tokens(genre, genre, token = "regex", pattern = reg) %>% 
+  drop_na ( votes ) %>% 
+  group_by(genre) %>% 
+  summarise( sum_votes = sum(votes)) %>% 
+  mutate( genre = reorder( genre, sum_votes) )%>% 
+  ungroup() %>%
+  ggplot( aes ( genre, sum_votes, fill = sum_votes)) +
+  geom_col( show.legend = FALSE ) +
+  coord_flip() +
+  labs( x = "Gatunek", y = "ilośc osób oceniających", title = "Wykres ilości ocen dla danego gatunku") +
+  scale_fill_gradient( low = "#E08CDA", high = "#6738CB") +
+  scale_y_continuous(label = scales::comma)
+```
+
+### Wykres średniej ocen dla danego aktora
+
+Wykres zmienia się w zależności od domyślnie ustawionej minimalnej liczby ocen. Przedstawiony poniżej jest dla filmów, które otrzymały minimum 5000 ocen i podobnie prym wiodą tutaj hinduscy aktorzy.
+
+```{r, results='hide'}
+filtered_dane %>% 
+  filter( votes > 5000) %>% 
+  select( stars, rating ) %>% 
+  drop_na( rating ) %>% 
+  group_by(stars) %>% 
+  summarise (average = mean(rating)) %>% 
+  arrange( desc(average) ) %>% 
+  mutate( stars = reorder(stars, average)) %>% 
+  head(30) %>% 
+  ggplot( aes (stars, average, fill = average)) +
+  geom_col(show.legend = FALSE)+
+  coord_flip() +
+  labs( x = "Aktorzy", y = "średnia ocen filmów", title = "Wykres średniej ocen dla danego aktora") +
+  scale_fill_gradient( low = "#E08CDA", high = "#6738CB")
+```
+
+### Histogram dla długości filmów
+
+Histogram pokazuje, że najwięcej jest seriali o krótkich odcinkach (do 60 minut) i filmów o długości trwania około 100 minut. Dłuższe filmy są zapewne mniej chętnie oglądane.
+
+```{r, results='hide'}
+dane2 %>% 
+  mutate(duration = str_trim(duration)) %>% 
+  mutate(duration = as.integer(str_replace_all(duration, " min", ""))) %>% 
+  drop_na(duration) %>% 
+  filter(duration < 300) %>% 
+  ggplot( aes(duration, fill = ..count..) ) +
+  geom_histogram( bins = 100, show.legend = FALSE) +
+  labs( x = "Długość trwania", y = "ilość filmów", title = "Histogram dla długości filmów") 
+```
+
+### Wykres zależności średniej ocen od długości trwania filmu
+
+Wykres pokazuje, że seriale z odcinkami pomiędzy 25 a 50 min cieszą się największym uznaniem, później im dłuższe lub im krótsze odcinki poza tym zakresem, tym oceny spadają. Jesli chodzi o filmy (czas trwania prawdopodobnie od około 90-100 minut), to im dłuższy czas trwania, tym pojawiają się wyższe oceny, ale również oceny bardzo skrajne.
+
+```{r, results='hide'}
+dane2 %>% 
+  mutate(duration = str_trim(duration)) %>% 
+  mutate(duration = as.integer(str_replace_all(duration, " min", ""))) %>% 
+  drop_na(duration) %>% 
+  drop_na(rating) %>% 
+  filter(duration < 300) %>% 
+  group_by(duration) %>% 
+  summarise(average = mean(rating)) %>% 
+  ggplot( aes(duration, average, color = average)) +
+  geom_point( show.legend = FALSE ) +
+  labs( x = "Czas trwania", y = "średnia ocen filmów", title = "Wykres zależności średniej ocen od długości trwania filmu") 
+```
